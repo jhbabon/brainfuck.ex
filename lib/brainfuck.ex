@@ -5,8 +5,8 @@ defmodule Brainfuck do
 
   ## Examples
 
-      iex> Brainfuck.eval("++++++ [ > ++++++++++ < - ] > +++++ .")
-      A
+      Brainfuck.eval("++++++ [ > ++++++++++ < - ] > +++++ .")
+      #=> Output: A
   """
 
   @token_inc ?+
@@ -29,12 +29,20 @@ defmodule Brainfuck do
     @token_loop_end,
   ]
 
+  defmodule OutOfMemoryError do
+    defexception message: "Access out of memory limits"
+  end
+
+  defmodule UnbalancedLoopError do
+    defexception message: "There is an unbalanced loop"
+  end
+
   defmodule Token do
     defstruct symbol: nil, meta: %{}
   end
 
   defmodule Tape do
-    @size 30
+    @size 10
     @cells Stream.iterate(0, fn(_) -> 0 end) |> Enum.take(@size)
 
     defstruct cells: @cells, head: 0
@@ -50,6 +58,8 @@ defmodule Brainfuck do
   end
 
   defimpl Memory, for: Tape do
+    @limit 255
+
     def read(tape) do
       Enum.at(tape.cells, tape.head)
     end
@@ -61,19 +71,43 @@ defmodule Brainfuck do
     end
 
     def inc(tape) do
-      write(tape, read(tape) + 1)
+      current = read(tape)
+
+      value = cond do
+        current == @limit -> 0
+        true -> current + 1
+      end
+
+      write(tape, value)
     end
 
     def dec(tape) do
-      write(tape, read(tape) - 1)
+      current = read(tape)
+
+      value = cond do
+        current == 0 -> @limit
+        true -> current - 1
+      end
+
+      write(tape, value)
     end
 
     def right(tape) do
-      %{tape | head: tape.head + 1}
+      head = tape.head + 1
+      if head == length(tape.cells) do
+        raise OutOfMemoryError
+      end
+
+      %{tape | head: head}
     end
 
     def left(tape) do
-      %{tape | head: tape.head - 1}
+      head = tape.head - 1
+      if head < 0 do
+        raise OutOfMemoryError
+      end
+
+      %{tape | head: head}
     end
   end
 
@@ -130,7 +164,7 @@ defmodule Brainfuck do
   end
 
   def execute([], tape, _io) do
-    {:ok, tape}
+    tape
   end
 
   def execute([%Token{symbol: @token_inc} | tail], tape, io) do
@@ -166,17 +200,18 @@ defmodule Brainfuck do
     value = Brainfuck.Memory.read(tape)
     size = token.meta.size
     if value == 0 do
-      # jump!
+      # jump to the end of the loop
       execute(Enum.drop(tail, size), tape, io)
     else
-      loop_body = Enum.take(tail, size - 1) # skip ?]
-      {:ok, tape} = execute(loop_body, tape, io)
+      # don't execute the end of the loop
+      loop_body = Enum.take(tail, size - 1)
+      tape = execute(loop_body, tape, io)
       execute([token | tail], tape, io) # restart
     end
   end
 
   def execute([%Token{symbol: @token_loop_end} | _], _, _) do
     # This should never happen
-    {:error, :unbalanced_loop}
+    raise UnbalancedLoopError
   end
 end
