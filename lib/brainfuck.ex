@@ -191,7 +191,7 @@ defmodule Brainfuck do
   end
 
   def execute([%Token{symbol: @token_input} | tail], tape, io) do
-    value = IO.read(io, 1) |> String.to_charlist |> hd
+    value = IO.getn(io, "\n> ", 1) |> String.to_charlist |> hd
 
     execute(tail, Brainfuck.Memory.write(tape, value), io)
   end
